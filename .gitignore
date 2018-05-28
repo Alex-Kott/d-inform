@@ -1,2 +1,5 @@
 config.py
 venv/
+.idea/
+__pycache__/
+captcha.gif
