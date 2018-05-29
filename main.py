@@ -3,6 +3,7 @@ import asyncio
 from bs4 import BeautifulSoup
 from python_rucaptcha import ImageCaptcha
 from ftplib import FTP
+import hashlib
 
 from config import RUCAPTCHA_API_KEY, \
 	D_INFORM_LOGIN, D_INFORM_PASSWORD, \
@@ -64,9 +65,32 @@ def get_d_inform_files_list(soup):
 async def get_ftp_files_list():
 	with FTP(FTP_URL) as ftp:
 		ftp.login(user=FTP_USER, passwd=FTP_PASSWORD)
-		ftp.dir(FTP_DIR)
-		print(ftp.nlst())
-	return
+		ftp.cwd(FTP_DIR)
+		return ftp.nlst()
+
+
+async def load_files(set_for_loading, session):
+	"""
+	Загрузка выполняется путём отправки POST-запроса с параметрами [username, md5(password), filename]
+	"""
+	m = hashlib.md5()
+	m.update(D_INFORM_PASSWORD.encode('utf-8'))
+	for file_name in set_for_loading:
+		file_form = {
+			'name': D_INFORM_LOGIN,
+			'password': m.hexdigest(),
+			'file': file_name
+		}
+		print(file_form)
+		async with session.post(f"{url}/fileboard.php", data=file_form, headers=headers) as resp:
+			with open(file_name, 'wb') as file:
+				while True:
+					chunk = await resp.content.read(1024)
+					if not chunk:
+						break
+					file.write(chunk)
+
+
 
 
 async def main():
@@ -74,29 +98,28 @@ async def main():
 		async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
 			soup = BeautifulSoup(await login_page.text(), "lxml")
 
-			# captcha_img = soup.find("img")
-			# await save_captcha(session, captcha_img['src'])
-			#
-			# captcha = soup.find('img')
-			# captcha_text = await resolve_captcha(captcha['src'])
-			#
-			# main_page = await d_inform_login(session, captcha_text)
-			#
-			# main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
-			#
-			# with open('response.html', 'w') as file:
-			# 	file.write(str(main_page_soup))
+			captcha_img = soup.find("img")
+			await save_captcha(session, captcha_img['src'])
+
+			captcha = soup.find('img')
+			captcha_text = await resolve_captcha(captcha['src'])
+
+			main_page = await d_inform_login(session, captcha_text)
+
+			main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
+
+			with open('response.html', 'w') as file:
+				file.write(str(main_page_soup))
 
 			with open('response.html') as file:
 				main_page_soup = BeautifulSoup(file.read(), 'lxml')
 
 			d_inform_files_list = get_d_inform_files_list(main_page_soup)
-			# for i in d_inform_files_list:
-			# 	print(i)
-
 			ftp_files_list = await get_ftp_files_list()
-			# for i in ftp_files_list:
-			# 	print(i)
+
+			set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
+
+			await load_files(set_for_loading, session)
 
 
 if __name__ == "__main__":
