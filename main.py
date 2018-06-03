@@ -115,7 +115,7 @@ async def load_files(set_for_loading, session):
             with open(archives_dir / file_name, 'wb') as file:
                 async for data, end_of_http_chunk in resp.content.iter_chunks():
                     file.write(data)
-        check_archive(archives_dir / file_name)
+            check_archive(archives_dir / file_name)
 
 
 def load_archives_to_ftp():
