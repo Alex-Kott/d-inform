@@ -6,7 +6,7 @@ import hashlib
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 from python_rucaptcha import ImageCaptcha
-from aioftp import Client as FtpClient
+from rarfile import RarFile
 
 from config import RUCAPTCHA_API_KEY, \
     D_INFORM_LOGIN, D_INFORM_PASSWORD, \
@@ -28,6 +28,10 @@ headers = {
 }
 
 
+class WrongCaptcha(Exception):
+    pass
+
+
 async def save_captcha(session, captcha_url):
     async with session.get(f"{url}/{captcha_url}", headers=headers) as response:
         with open('captcha.gif', 'wb') as file:
@@ -46,14 +50,31 @@ async def resolve_captcha(img_url):
         return await resolve_captcha(img_url)
 
 
+def analyze_login_response(page_text):
+    if page_text.find("Неверный проверочный код") != -1:
+        raise WrongCaptcha()
+
+
 async def d_inform_login(session, captcha):
+    captcha_text = await resolve_captcha(captcha['src'])
     payload = {
         'user': D_INFORM_LOGIN,
         'password': D_INFORM_PASSWORD,
-        'keystring': captcha,
+        'keystring': captcha_text,
         'submit': 'Войти'
     }
-    return await session.post(f"{url}/fileboard.php", data=payload, headers=headers)
+    response = await session.post(f"{url}/fileboard.php", data=payload, headers=headers)
+    response_text = await response.text()
+    with open('response.html', 'w') as file:
+        file.write(response_text)
+    try:
+        analyze_login_response(response_text)
+        return response
+    except WrongCaptcha:
+        print("wrong captcha")
+        return await d_inform_login(session, captcha)
+
+
 
 
 def get_d_inform_files_list(soup):
@@ -70,6 +91,11 @@ async def get_ftp_files_list():
         ftp.login(user=FTP_USER, passwd=FTP_PASSWORD)
         ftp.cwd(FTP_DIR)
         return ftp.nlst()
+
+
+def check_archive(archive_name):
+    with RarFile(archive_name) as archive:
+        pass
 
 
 async def load_files(set_for_loading, session):
@@ -89,10 +115,10 @@ async def load_files(set_for_loading, session):
             with open(archives_dir / file_name, 'wb') as file:
                 async for data, end_of_http_chunk in resp.content.iter_chunks():
                     file.write(data)
-        break
+        check_archive(archives_dir / file_name)
 
 
-async def load_archives_to_ftp():
+def load_archives_to_ftp():
     archives_dir = Path("archives")
     with FTP(FTP_URL) as ftp:
         ftp.login(user=FTP_USER, passwd=FTP_PASSWORD)
@@ -100,7 +126,6 @@ async def load_archives_to_ftp():
         ftp.set_debuglevel(2)
         for archive_name in archives_dir.iterdir():
             with open(archive_name, "rb") as file:
-                print(ftp.nlst())
                 ftp.storbinary("STOR " + str(archive_name), file)
 
 
@@ -113,9 +138,12 @@ async def main():
             await save_captcha(session, captcha_img['src'])
 
             captcha = soup.find('img')
-            captcha_text = await resolve_captcha(captcha['src'])
 
-            main_page = await d_inform_login(session, captcha_text)
+            main_page = await d_inform_login(session, captcha)
+
+
+            print("OK")
+            exit()
 
             main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
 
@@ -131,7 +159,7 @@ async def main():
             set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
             await load_files(set_for_loading, session)
 
-            await load_archives_to_ftp()
+            load_archives_to_ftp()
 
             for entry in Path('archives').iterdir():
                 entry.unlink()
