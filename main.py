@@ -89,6 +89,7 @@ async def load_files(set_for_loading, session):
             with open(archives_dir / file_name, 'wb') as file:
                 async for data, end_of_http_chunk in resp.content.iter_chunks():
                     file.write(data)
+        break
 
 
 async def load_archives_to_ftp():
