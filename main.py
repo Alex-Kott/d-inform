@@ -1,9 +1,12 @@
-from aiohttp import ClientSession
 import asyncio
+from ftplib import FTP
+from pathlib import Path
+import hashlib
+
+from aiohttp import ClientSession
 from bs4 import BeautifulSoup
 from python_rucaptcha import ImageCaptcha
-from ftplib import FTP
-import hashlib
+from aioftp import Client as FtpClient
 
 from config import RUCAPTCHA_API_KEY, \
     D_INFORM_LOGIN, D_INFORM_PASSWORD, \
@@ -75,20 +78,29 @@ async def load_files(set_for_loading, session):
     """
     m = hashlib.md5()
     m.update(D_INFORM_PASSWORD.encode('utf-8'))
+    archives_dir = Path("archives")
     for file_name in set_for_loading:
         file_form = {
             'user': D_INFORM_LOGIN,
             'password': m.hexdigest(),
             'file': file_name
         }
-        # print(file_form)
         async with session.post(f"{url}/fileboard.php", data=file_form, headers=headers) as resp:
-            # print(resp)
-            # print(resp.__dict__)
-            with open(file_name, 'wb') as file:
+            with open(archives_dir / file_name, 'wb') as file:
                 async for data, end_of_http_chunk in resp.content.iter_chunks():
                     file.write(data)
 
+
+async def load_archives_to_ftp():
+    archives_dir = Path("archives")
+    with FTP(FTP_URL) as ftp:
+        ftp.login(user=FTP_USER, passwd=FTP_PASSWORD)
+        ftp.cwd(FTP_DIR)
+        ftp.set_debuglevel(2)
+        for archive_name in archives_dir.iterdir():
+            with open(archive_name, "rb") as file:
+                print(ftp.nlst())
+                ftp.storbinary("STOR " + str(archive_name), file)
 
 
 async def main():
@@ -116,8 +128,12 @@ async def main():
             ftp_files_list = await get_ftp_files_list()
 
             set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
-
             await load_files(set_for_loading, session)
+
+            await load_archives_to_ftp()
+
+            for entry in Path('archives').iterdir():
+                entry.unlink()
 
 
 if __name__ == "__main__":
