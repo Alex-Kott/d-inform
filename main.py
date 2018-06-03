@@ -2,6 +2,7 @@ import asyncio
 from ftplib import FTP
 from pathlib import Path
 import hashlib
+from asyncio import sleep
 
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
@@ -32,13 +33,13 @@ class WrongCaptcha(Exception):
     pass
 
 
-async def save_captcha(session, captcha_url):
-    async with session.get(f"{url}/{captcha_url}", headers=headers) as response:
+async def save_captcha(session, captcha):
+    async with session.get(f"{url}/{captcha['src']}", headers=headers) as response:
         with open('captcha.gif', 'wb') as file:
             file.write(await response.read())
 
 
-async def resolve_captcha(img_url):
+async def resolve_captcha():
     user_answer = await ImageCaptcha \
         .aioImageCaptcha(rucaptcha_key=RUCAPTCHA_API_KEY,
                          service_type='rucaptcha') \
@@ -47,7 +48,7 @@ async def resolve_captcha(img_url):
     if user_answer['errorId'] == 0:
         return user_answer['captchaSolve']
     else:
-        return await resolve_captcha(img_url)
+        return await resolve_captcha()
 
 
 def analyze_login_response(page_text):
@@ -55,8 +56,10 @@ def analyze_login_response(page_text):
         raise WrongCaptcha()
 
 
-async def d_inform_login(session, captcha):
-    captcha_text = await resolve_captcha(captcha['src'])
+async def d_inform_login(session, login_page):
+    captcha_img = BeautifulSoup(login_page, "lxml").find('img')
+    await save_captcha(session, captcha_img)
+    captcha_text = await resolve_captcha()
     payload = {
         'user': D_INFORM_LOGIN,
         'password': D_INFORM_PASSWORD,
@@ -71,10 +74,7 @@ async def d_inform_login(session, captcha):
         analyze_login_response(response_text)
         return response
     except WrongCaptcha:
-        print("wrong captcha")
-        return await d_inform_login(session, captcha)
-
-
+        return await d_inform_login(session, login_page)
 
 
 def get_d_inform_files_list(soup):
@@ -130,39 +130,26 @@ def load_archives_to_ftp():
 
 
 async def main():
-    async with ClientSession() as session:
-        async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
-            soup = BeautifulSoup(await login_page.text(), "lxml")
+    try:
+        async with ClientSession() as session:
+            async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
+                main_page = await d_inform_login(session, await login_page.text())
 
-            captcha_img = soup.find("img")
-            await save_captcha(session, captcha_img['src'])
+                main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
 
-            captcha = soup.find('img')
+                d_inform_files_list = get_d_inform_files_list(main_page_soup)
+                ftp_files_list = await get_ftp_files_list()
 
-            main_page = await d_inform_login(session, captcha)
+                set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
+                await load_files(set_for_loading, session)
 
+                load_archives_to_ftp()
 
-            print("OK")
-            exit()
-
-            main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
-
-            with open('response.html', 'w') as file:
-                file.write(str(main_page_soup))
-
-            with open('response.html') as file:
-                main_page_soup = BeautifulSoup(file.read(), 'lxml')
-
-            d_inform_files_list = get_d_inform_files_list(main_page_soup)
-            ftp_files_list = await get_ftp_files_list()
-
-            set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
-            await load_files(set_for_loading, session)
-
-            load_archives_to_ftp()
-
-            for entry in Path('archives').iterdir():
-                entry.unlink()
+                for entry in Path('archives').iterdir():
+                    entry.unlink()
+    except:
+        sleep(60 * 10)
+        await main()
 
 
 if __name__ == "__main__":
