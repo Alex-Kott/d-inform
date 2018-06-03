@@ -130,26 +130,22 @@ def load_archives_to_ftp():
 
 
 async def main():
-    try:
-        async with ClientSession() as session:
-            async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
-                main_page = await d_inform_login(session, await login_page.text())
+    async with ClientSession() as session:
+        async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
+            main_page = await d_inform_login(session, await login_page.text())
 
-                main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
+            main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
 
-                d_inform_files_list = get_d_inform_files_list(main_page_soup)
-                ftp_files_list = await get_ftp_files_list()
+            d_inform_files_list = get_d_inform_files_list(main_page_soup)
+            ftp_files_list = await get_ftp_files_list()
 
-                set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
-                await load_files(set_for_loading, session)
+            set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
+            await load_files(set_for_loading, session)
 
-                load_archives_to_ftp()
+            load_archives_to_ftp()
 
-                for entry in Path('archives').iterdir():
-                    entry.unlink()
-    except:
-        sleep(60 * 10)
-        await main()
+            for entry in Path('archives').iterdir():
+                entry.unlink()
 
 
 if __name__ == "__main__":
