@@ -11,6 +11,10 @@ lxml==4.2.1
 multidict==4.3.1
 pkg-resources==0.0.0
 python-rucaptcha==1.6.6
+<<<<<<< HEAD
+=======
+rarfile==3.0
+>>>>>>> d065e42367616017a3325a5007ecb99e029bac13
 requests==2.18.4
 urllib3==1.22
 yarl==1.2.4

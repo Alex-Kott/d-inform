@@ -2,7 +2,7 @@ import asyncio
 from ftplib import FTP
 from pathlib import Path
 import hashlib
-from asyncio import sleep
+import logging
 
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
@@ -11,9 +11,10 @@ from rarfile import RarFile
 
 from config import RUCAPTCHA_API_KEY, \
     D_INFORM_LOGIN, D_INFORM_PASSWORD, \
-    FTP_URL, FTP_USER, FTP_PASSWORD, FTP_DIR
+    FTP_URL, FTP_USER, FTP_PASSWORD, FTP_DIR, URL
 
-url = "http://client.d-inform.com"
+logging.basicConfig(filename='log')
+
 headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
     'Accept-Encoding': 'gzip, deflate',
@@ -22,8 +23,6 @@ headers = {
     'Connection': 'keep-alive',
     'Content-Type': 'application/x-www-form-urlencoded',
     'Host': 'client.d-inform.com',
-    'Origin': 'http://client.d-inform.com',
-    'Referer': 'http://client.d-inform.com/fileboard.php',
     'Upgrade-Insecure-Requests': '1',
     'User-Agent': 'Mozilla/5.0(X11; Linux x86_64) AppleWebKit/537.36(KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36'
 }
@@ -33,8 +32,12 @@ class WrongCaptcha(Exception):
     pass
 
 
+class LoginFailed(Exception):
+    pass
+
+
 async def save_captcha(session, captcha):
-    async with session.get(f"{url}/{captcha['src']}", headers=headers) as response:
+    async with session.get(f"{URL}/{captcha['src']}", headers=headers) as response:
         with open('captcha.gif', 'wb') as file:
             file.write(await response.read())
 
@@ -53,7 +56,11 @@ async def resolve_captcha():
 
 def analyze_login_response(page_text):
     if page_text.find("Неверный проверочный код") != -1:
+        logging.warning("Wrong captcha. Let's try again.")
         raise WrongCaptcha()
+    if page_text.find("доступ для него закрыт") != -1:
+        logging.error("Login failed. No such user or this user was suspend.")
+        raise LoginFailed()
 
 
 async def d_inform_login(session, login_page):
@@ -66,12 +73,13 @@ async def d_inform_login(session, login_page):
         'keystring': captcha_text,
         'submit': 'Войти'
     }
-    response = await session.post(f"{url}/fileboard.php", data=payload, headers=headers)
+    response = await session.post(f"{URL}/fileboard.php", data=payload, headers=headers)
     response_text = await response.text()
-    with open('response.html', 'w') as file:
-        file.write(response_text)
+    # with open('response.html', 'w') as file:
+    #     file.write(response_text)
     try:
         analyze_login_response(response_text)
+        logging.info("Log in success")
         return response
     except WrongCaptcha:
         return await d_inform_login(session, login_page)
@@ -111,11 +119,11 @@ async def load_files(set_for_loading, session):
             'password': m.hexdigest(),
             'file': file_name
         }
-        async with session.post(f"{url}/fileboard.php", data=file_form, headers=headers) as resp:
+        async with session.post(f"{URL}/fileboard.php", data=file_form, headers=headers) as resp:
             with open(archives_dir / file_name, 'wb') as file:
                 async for data, end_of_http_chunk in resp.content.iter_chunks():
                     file.write(data)
-            check_archive(archives_dir / file_name)
+            # check_archive(archives_dir / file_name)
 
 
 def load_archives_to_ftp():
@@ -130,19 +138,32 @@ def load_archives_to_ftp():
 
 
 async def main():
+    logging.info("Script started")
     async with ClientSession() as session:
-        async with session.get(f"{url}/fileboard.php", headers=headers) as login_page:
+        logging.info(f"{URL} connected")
+        async with session.get(f"{URL}/fileboard.php", headers=headers) as login_page:
             main_page = await d_inform_login(session, await login_page.text())
 
             main_page_soup = BeautifulSoup(await main_page.text(), 'lxml')
 
             d_inform_files_list = get_d_inform_files_list(main_page_soup)
-            ftp_files_list = await get_ftp_files_list()
+            try:
+                ftp_files_list = await get_ftp_files_list()
+                set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
+            except Exception as e:
+                logging.error("FTP connection failed")
+                raise e
+            try:
+                await load_files(set_for_loading, session)
+            except Exception as e:
+                logging.error("Load archives failed")
+                raise e
 
-            set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
-            await load_files(set_for_loading, session)
-
-            load_archives_to_ftp()
+            try:
+                load_archives_to_ftp()
+            except Exception as e:
+                logging.error("Uploading archives to FTP failed")
+                raise e
 
             for entry in Path('archives').iterdir():
                 entry.unlink()
