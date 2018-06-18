@@ -5,3 +5,4 @@ __pycache__/
 captcha.gif
 *.rar
 archives/*
+log

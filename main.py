@@ -56,10 +56,10 @@ async def resolve_captcha():
 
 def analyze_login_response(page_text):
     if page_text.find("Неверный проверочный код") != -1:
-        logging.warning("Wrong captcha. Let's try again.")
+        logger.warning("Wrong captcha. Let's try again.")
         raise WrongCaptcha()
     if page_text.find("доступ для него закрыт") != -1:
-        logging.error("Login failed. No such user or this user was suspend.")
+        logger.error("Login failed. No such user or this user was suspend.")
         raise LoginFailed()
 
 
@@ -79,7 +79,7 @@ async def d_inform_login(session, login_page):
     #     file.write(response_text)
     try:
         analyze_login_response(response_text)
-        logging.info("Log in success")
+        logger.info("Log in success")
         return response
     except WrongCaptcha:
         return await d_inform_login(session, login_page)
@@ -138,9 +138,9 @@ def load_archives_to_ftp():
 
 
 async def main():
-    logging.info("Script started")
+    logger.info("Script started")
     async with ClientSession() as session:
-        logging.info(f"{URL} connected")
+        logger.info(f"{URL} connected")
         async with session.get(f"{URL}/fileboard.php", headers=headers) as login_page:
             main_page = await d_inform_login(session, await login_page.text())
 
@@ -151,18 +151,18 @@ async def main():
                 ftp_files_list = await get_ftp_files_list()
                 set_for_loading = set(d_inform_files_list) - set(ftp_files_list)
             except Exception as e:
-                logging.error("FTP connection failed")
+                logger.error("FTP connection failed")
                 raise e
             try:
                 await load_files(set_for_loading, session)
             except Exception as e:
-                logging.error("Load archives failed")
+                logger.error("Load archives failed")
                 raise e
 
             try:
                 load_archives_to_ftp()
             except Exception as e:
-                logging.error("Uploading archives to FTP failed")
+                logger.error("Uploading archives to FTP failed")
                 raise e
 
             for entry in Path('archives').iterdir():
@@ -170,6 +170,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    logger = logging.getLogger('logger')
+    logger.setLevel('INFO')
     event_loop = asyncio.get_event_loop()
     event_loop.run_until_complete(main())
     event_loop.close()
