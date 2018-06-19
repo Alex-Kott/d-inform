@@ -13,7 +13,10 @@ from config import RUCAPTCHA_API_KEY, \
     D_INFORM_LOGIN, D_INFORM_PASSWORD, \
     FTP_URL, FTP_USER, FTP_PASSWORD, FTP_DIR, URL
 
-logging.basicConfig(filename='log')
+logging.basicConfig(filename='log',
+                    format='%(asctime)s %(levelname)-8s %(message)s',
+                    datefmt='%a, %d %b %Y %H:%M:%S'
+                    )
 
 headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
