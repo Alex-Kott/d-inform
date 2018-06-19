@@ -167,6 +167,7 @@ async def main():
 
             for entry in Path('archives').iterdir():
                 entry.unlink()
+            logger.info("Loading complete")
 
 
 if __name__ == "__main__":
