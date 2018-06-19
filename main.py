@@ -113,6 +113,7 @@ async def load_files(set_for_loading, session):
     m = hashlib.md5()
     m.update(D_INFORM_PASSWORD.encode('utf-8'))
     archives_dir = Path("archives")
+    archives_dir.mkdir(exist_ok=True)
     for file_name in set_for_loading:
         file_form = {
             'user': D_INFORM_LOGIN,
