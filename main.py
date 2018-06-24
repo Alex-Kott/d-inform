@@ -135,10 +135,10 @@ def load_archives_to_ftp():
     with FTP(FTP_URL) as ftp:
         ftp.login(user=FTP_USER, passwd=FTP_PASSWORD)
         ftp.cwd(FTP_DIR)
-        ftp.set_debuglevel(2)
+        # ftp.set_debuglevel(2)
         for archive_name in archives_dir.iterdir():
             with open(archive_name, "rb") as file:
-                ftp.storbinary("STOR " + str(archive_name), file)
+                ftp.storbinary("STOR " + str(archive_name.name), file)
 
 
 async def main():
